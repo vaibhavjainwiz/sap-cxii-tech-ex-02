@@ -2,7 +2,7 @@ import argparse
 import sys
 from etl.extract import extract
 from etl.transform import transform
-from etl.load import load
+from etl import api
 
 def main():
     """ Main function"""
@@ -18,7 +18,7 @@ def main():
     if args.command == "load":
         df = extract(args.filepath)
         df = transform(df)
-        load(df)
+        api.save_orders(df)
         print(f"Loaded {len(df)} rows into SQLite.")
     else:
         parser.print_help()
