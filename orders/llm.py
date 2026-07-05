@@ -3,7 +3,7 @@ import logging
 
 from openai import OpenAI
 
-from etl.prompt import SYSTEM_PROMPT
+from orders.prompt import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 

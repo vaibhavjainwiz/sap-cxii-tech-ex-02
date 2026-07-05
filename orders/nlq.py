@@ -1,6 +1,6 @@
 import logging
 
-from etl import db, llm
+from orders import db, llm
 
 logger = logging.getLogger(__name__)
 

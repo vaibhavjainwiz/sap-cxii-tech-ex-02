@@ -3,9 +3,9 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
 
-from etl import api, nlq
-from etl.models import Order, OrderStats
-from etl.models_nlq import AskRequest, AskResponse
+from orders import api, nlq
+from orders.models import Order, OrderStats
+from orders.models_nlq import AskRequest, AskResponse
 
 logging.basicConfig(level=logging.INFO)
 

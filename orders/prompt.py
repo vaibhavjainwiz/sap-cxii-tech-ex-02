@@ -1,4 +1,4 @@
-from etl.config import TABLE_NAME
+from orders.config import TABLE_NAME
 
 SCHEMA_DESCRIPTION = f"""Table: {TABLE_NAME}
 Columns:

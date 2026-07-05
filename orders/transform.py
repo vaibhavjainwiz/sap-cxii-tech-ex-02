@@ -1,5 +1,5 @@
 import pandas as pd
-from etl.config import EXCHANGE_RATE
+from orders.config import EXCHANGE_RATE
 
 def transform(df: pd.DataFrame) -> pd.DataFrame:
     """ Transform the dataframe. """

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import pandas as pd
-from etl import db
-from etl.models import Order, OrderStats
+from orders import db
+from orders.models import Order, OrderStats
 
 
 def save_orders(df: pd.DataFrame):

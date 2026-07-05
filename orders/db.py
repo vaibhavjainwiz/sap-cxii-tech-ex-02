@@ -1,7 +1,7 @@
 import sqlite3
 import pandas as pd
-from etl.config import DB_PATH, TABLE_NAME
-from etl.models import Order, OrderStats
+from orders.config import DB_PATH, TABLE_NAME
+from orders.models import Order, OrderStats
 
 
 def _connect():
