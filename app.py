@@ -1,7 +1,13 @@
+import logging
 from typing import Annotated
+
 from fastapi import FastAPI, HTTPException, Query
-from etl import api
+
+from etl import api, nlq
 from etl.models import Order, OrderStats
+from etl.models_nlq import AskRequest, AskResponse
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Order API")
 
@@ -27,3 +33,13 @@ def order_stats() -> OrderStats:
 @app.get("/orders/recent")
 def recent_orders(days: Annotated[int, Query(ge=1)]) -> list[Order]:
     return api.get_recent_orders(days)
+
+
+@app.post("/orders/ask")
+def ask_orders(req: AskRequest) -> AskResponse:
+    result = nlq.ask(req.question)
+    if "error" in result:
+        if result["error"] == "unanswerable":
+            raise HTTPException(status_code=400, detail=result["detail"])
+        raise HTTPException(status_code=500, detail=result["detail"])
+    return AskResponse(**result)

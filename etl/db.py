@@ -53,3 +53,10 @@ def find_recent_orders(cutoff_date: str) -> list[Order]:
     ).fetchall()
     conn.close()
     return [Order(**dict(r)) for r in rows]
+
+
+def execute_raw_sql(sql: str) -> list[dict]:
+    conn = _connect()
+    rows = conn.execute(sql).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
