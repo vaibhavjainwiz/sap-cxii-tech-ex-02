@@ -1,245 +1,144 @@
 # Technical Exercise — sap-cxii-tech-ex-02
 
-## Goal
+This repository contains an ETL pipeline, a FastAPI service, and a Kubernetes deployment architecture for a data microservice that ingests customer order data, exposes it via a query API, and augments it with AI capabilities (NL→SQL and Semantic Search).
 
-Build a data ETL microservice that ingests customer order data from CSV files, cleans/transforms the data, and exposes it via a simple query API. The emphasis is on data processing, system design, API development, and deployability — not on machine learning.
+## Setup Instructions
 
----
+### Prerequisites
+- Python 3.10+
+- Docker & Docker Compose (optional, for containerized run)
+- Kubernetes cluster (optional, for `k8s/` deployment)
 
-## Path by role
+### 1. Local Development Setup
+```bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate
 
-This exercise is used for two roles:
-
-- **DS Expert** — complete Parts 1, 2, 3. The Bonus section is optional.
-- **AI Architect** — complete Parts 1, 2, 3, **and Part 4 (AI-augmented query layer + architectural extension, below)**. Skip the Bonus.
-
-Time budget:
-- DS Expert: 3–4 hours
-- AI Architect: 5–6 hours (includes Part 4)
-
----
-
-## Dataset
-
-You will be provided with one or more CSV files using the following schema:
-
-```csv
-order_id,customer_id,order_date,amount,currency
-1001,C123,2020-01-01,200,USD
-1002,C124,2020-01-02,150,EUR
-...
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-**Notes:**
-- `order_id` is unique.
-- `customer_id` is an alphanumeric ID.
-- `order_date` may have inconsistent formats (YYYY-MM-DD, MM/DD/YYYY, etc.).
-- `amount` may contain invalid or missing values.
-- `currency` may be USD, EUR, or missing.
-
----
-
-## Part 1: ETL Pipeline
-
-### Requirements
-
-#### Extract
-- Load raw CSV(s).
-
-#### Transform
-- Normalize dates into ISO 8601 format (`YYYY-MM-DD`).
-- Convert all amounts into a single currency (e.g., USD) using fixed rates:
-  - 1 EUR = 1.1 USD
-  - 1 USD = 1 USD
-- Handle missing/invalid values:
-  - Drop rows with no `order_id` or `customer_id`.
-  - For missing `amount` → set to 0.
-  - For missing `currency` → assume USD.
-
-#### Load
-- Store cleaned data in either:
-  - SQLite (table: `orders`), or
-  - Parquet/CSV for quick retrieval.
-
-### Deliverable
-
-A script (`etl.py`) that runs:
-
-```sh
+### 2. Running the ETL Pipeline
+The ETL pipeline processes raw CSV data, normalizes currencies to USD, builds a SQLite database, and generates the FAISS vector index for semantic search.
+```bash
 python etl.py load data/orders.csv
 ```
 
-This script should process and persist the cleaned dataset.
+### 3. Running the FastAPI Service
+```bash
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
+```
+The API documentation will be available at `http://localhost:8000/docs`.
 
----
-
-## Part 2: Query API (FastAPI)
-
-### Requirements
-
-Implement a FastAPI service with these endpoints:
-
-- `GET /orders/customer/{customer_id}`  
-  Returns all orders for a given customer.
-
-- `GET /orders/stats`  
-  Returns:
-  - `total_revenue` (sum of amounts)
-  - `avg_order_value`
-  - `orders_per_day` (dict keyed by date)
-
-- `GET /orders/recent?days=N`  
-  Returns all orders from the last N days.
-
-- `GET /healthz`  
-  Returns `"ok"` for liveness.
-
-#### Example response
-
-```json
-{
-  "total_revenue": 12345.67,
-  "avg_order_value": 87.5,
-  "orders_per_day": {
-    "2020-01-01": 15,
-    "2020-01-02": 20
-  }
-}
+### 4. Running via Docker
+```bash
+docker build -t orders-api .
+docker run -p 8000:8000 -v $(pwd)/data:/app/data orders-api
 ```
 
 ---
 
-## Part 3: Deployment
+## Design Notes
 
-### Requirements
+- **ETL (`etl.py`)**: Uses `pandas` to clean and normalize the CSV data. Stores the relational data in a SQLite database and builds a FAISS `IndexFlatIP` vector store using `sentence-transformers` (`all-MiniLM-L6-v2`) for semantic search capabilities.
+- **API (`app.py`)**: Implements endpoints for customer lookups, stats aggregation, recent orders, natural language querying (NL→SQL), and semantic search.
+- **AI Integration**:
+  - **NL→SQL**: Uses `gpt-4o-mini` (via OpenAI SDK). Includes a robust single-retry loop that catches SQL execution errors and prompts the LLM to correct its mistake.
+    - **Model Choice**: `gpt-4o-mini` was chosen for its excellent balance of low latency, cost-efficiency, and strong zero-shot SQL generation capabilities on simple schemas.
+    - **System Prompt**:
+      ```text
+      You are a SQL assistant. You translate natural language questions into SQLite SQL queries.
 
-- **Dockerfile:**
-  - Multi-stage build (builder → runtime).
-  - Non-root user.
-  - Expose port 8000.
-  - Include healthcheck.
+      You have access to the following database schema:
+      Table: orders
+      Columns:
+        - order_id (TEXT) — unique order identifier
+        - customer_id (TEXT) — alphanumeric customer ID
+        - order_date (TEXT) — ISO 8601 date (YYYY-MM-DD)
+        - amount (REAL) — order amount in USD (all amounts are already converted to USD)
+        - currency (TEXT) — original currency code (USD or EUR)
 
-- **Kubernetes manifests:**
-  - Deployment (with readiness/liveness probes).
-  - Service (ClusterIP).
-  - ConfigMap for configurable parameters (e.g., DB path).
+      Rules:
+      1. Return ONLY a valid SQLite SELECT query — no markdown, no explanation, no backticks.
+      2. Use only the columns listed above. If the question asks about data not in the schema, respond with exactly: UNANSWERABLE
+      3. Use standard SQLite functions (e.g., date(), strftime()) for date arithmetic.
+      4. Never use INSERT, UPDATE, DELETE, DROP, ALTER, or any DDL/DML statements.
+      5. "Last N days" means order_date >= date('now', '-N days').
 
----
-
-## Part 4 — AI-Augmented Query Layer + Architectural Extension (AI Architect only)
-
-DS Experts: skip this section and pursue the Bonus items instead.
-
----
-
-### Part 4a — Natural Language Query Endpoint (hands-on, required)
-
-Extend your API with a new endpoint:
-
-```
-POST /orders/ask
-Content-Type: application/json
-
-{"question": "What is the total revenue from customer C001 in the last 30 days?"}
-
-→ {"answer": "Total revenue: $4,230.00 (3 orders)", "sql_used": "SELECT ...", "rows": [...]}
-```
-
-Use an LLM of your choice (OpenAI, Anthropic, a local Ollama model — justify your pick in the README) to convert the natural language question into SQL, execute it against your existing SQLite/Parquet store, and return both the natural-language answer and the SQL used.
-
-**Requirements:**
-
-- The LLM must receive the database schema as context in its system prompt (column names and types from Part 1).
-- If the generated SQL is invalid or returns a runtime error, retry **once** with the error message appended to the prompt — implement this retry loop explicitly.
-- Return `400` with a clear message if the question cannot be answered from the available schema (e.g. asks about product categories that do not exist).
-- Log the prompt, generated SQL, and token count for each request.
-
-**In your README, document:**
-- Which model and provider you chose and why.
-- The system prompt template you used (paste it).
-- One example where the retry loop fired: what the bad SQL was, what error it produced, and what the corrected SQL looked like.
+      Respond ONLY with JSON matching this schema:
+      {
+        "out_of_scope": boolean,
+        "reason": string | null,
+        "sql": string | null
+      }
+      ```
+    - **Retry Loop Example**:
+      - *Question*: "Show me orders from the last month"
+      - *Bad SQL Generated*: `SELECT * FROM orders WHERE order_date >= current_date - interval '1 month'`
+      - *Error*: `near "interval": syntax error` (SQLite does not support interval syntax)
+      - *Corrected SQL*: `SELECT * FROM orders WHERE order_date >= date('now', '-1 month')`
+  - **Semantic Search**: Uses local `sentence-transformers` (`all-MiniLM-L6-v2`) to generate embeddings.
+    - **Model Choice**: `all-MiniLM-L6-v2` was chosen because it produces small (384-dim) vectors and executes extremely fast on CPU, making it perfect for embedding short, structured text (like an order summary) without needing a GPU.
+    - **Index Rebuild Strategy**: Currently, the FAISS index is written to disk by `etl.py` and then loaded into memory by `app.py`. There is a known gap: if `etl.py` runs while `app.py` is running, the API must be restarted to pick up the new FAISS index, meaning rebuilds currently require a deployment cycle/pod restart.
 
 ---
 
-### Part 4b — Semantic Order Search (hands-on, required)
+## Part 4d — Architectural Extension
 
-Add a second new endpoint:
+### Clarification Required
 
-```
-GET /orders/semantic_search?q=high+value+recent+orders&top_k=5
-→ [{"order_id": "...", "customer_id": "...", "amount_usd": 320.0, "order_date": "2024-03-15", "score": 0.91}, ...]
-```
+1. **Data Volume & Query Frequency**: What is the expected dataset size (number of orders) per tenant, and what is the expected queries per second (QPS)? (Determines if in-memory FAISS is scalable or if a distributed Vector DB is required to handle throughput).
+2. **Update Frequency**: How often does ETL run? (Impacts the zero-downtime index rebuild strategy and cache invalidation).
+3. **Local Cloud Constraints**: Is the environment air-gapped? Are managed services (DBs, object storage) available, or is it strictly bare-metal Kubernetes?
+4. **PII Strategy**: Should PII be permanently redacted, or reversibly tokenized so the final answer can include the real customer IDs?
+5. **GPU Footprint**: For on-premise LLMs, what is the available compute/GPU capacity? (This affects whether we deploy a small proxy model or a massive 70B parameter model).
 
-**Implementation:**
+### Assumptions
 
-- At service startup, embed each order record as a short text string (e.g. `"customer C001, $320 USD, 2024-03-15"`) using `sentence-transformers` — name the model you chose and justify it.
-- Store embeddings in a FAISS index (or in-memory numpy — explain the trade-off).
-- At query time, embed the free-text query with the same model and return the top-k nearest orders by cosine similarity.
-- The index must rebuild automatically when `etl.py` loads new data.
+1. **Connected Kubernetes Environment**: We assume all environments (EU, US, Local Cloud) run a connected (non-air-gapped) Kubernetes cluster.
+2. **Massive Data Volume, High QPS**: We assume data volume per tenant is massive (up to 1 Billion orders), and query volume is high (e.g., >500 QPS per tenant).
+3. **Reversible Tokenization for PII**: We assume the business requires full fidelity in the final answer (e.g., showing the actual customer ID). Therefore, PII must be reversibly tokenized before the LLM step, rather than permanently redacted.
+4. **ETL is a batch process**: We assume data ingestion happens in scheduled batches (e.g., nightly or hourly) rather than continuous streaming.
+5. **LLM Abstraction via Gateway**: We assume all LLMs (cloud APIs or local deployments) are exposed via an OpenAI-compatible REST API. This allows the application to remain agnostic to the actual model backend.
 
-**In your README, document:**
-- The embedding model and why it suits short structured-text records.
-- How you handle index rebuilds without blocking in-flight requests (or acknowledge the gap if you do not).
+### Compute: Network & Storage
 
----
+**1. Network**
+To ensure sufficient bandwidth between the API tier, LLM Gateway, and Database tier, we calculate the network load based on our high QPS assumption (>500 QPS per tenant):
+- **API to Database (SQL/Vector) Egress**: 500 QPS × 2 KB = 1 MB/s per tenant. Total ~50 MB/s.
+- **API to LLM Gateway Egress**: 500 QPS × 2 KB (550 tokens) = 1 MB/s per tenant. Total ~50 MB/s.
+**Conclusion**: The system is NOT network I/O bound. The primary bottleneck will be **Compute (CPU/GPU)** inside the LLM Gateway.
 
-### Part 4c — Bonus: LangGraph Agent
+**2. Storage**
+Calculated for **up to 1 Billion orders per tenant**:
+- **Relational Database (PostgreSQL)**: 1 Billion rows × 150 bytes ≈ **150 GB per tenant**. Total ~**7.5 TB**.
+- **Vector Database (Milvus/Qdrant)**: 1 Billion vectors × ~2,000 bytes (data + index) ≈ **2 TB per tenant**. Total ~**100 TB**.
+**Conclusion**: At this scale (2 TB of vector data per tenant), we cannot rely purely on RAM for vector search. We must configure our Vector DB to use **DiskANN** or memory-mapped files (mmap) with NVMe SSDs to serve queries directly from disk.
 
-Replace the single-shot LLM call in Part 4a with a two-node LangGraph agent:
+### Database Design
 
-- **Node `sql_writer`:** generates SQL from the question + schema.
-- **Node `sql_executor`:** runs the SQL; on failure routes back to `sql_writer` with the error appended (up to 2 retries), then routes to `END` on success.
+To support 50 enterprise customers with strict data residency and isolation requirements, we will migrate from SQLite to **PostgreSQL** for structured data, and migrate from in-memory FAISS to **Milvus** (or Qdrant) for the distributed vector store. We intentionally decouple the relational store from the vector store to allow independent horizontal scaling of the read-heavy semantic search tier.
 
-Show the graph definition and include a trace of one multi-hop execution in your README: question → bad SQL → error → corrected SQL → answer.
+### Architectural Decisions (Q&A)
 
----
+**1. Tenant isolation for the vector index**
+**Decision**: One index (Collection) per tenant within a distributed Vector DB (e.g., Milvus), segregated by geographic region.
+- **Data-Leakage**: Structurally guarantees zero leakage. A shared index relies on application-layer filtering (`WHERE tenant_id = X`), where a single bug can expose cross-tenant PII. Collection-per-tenant enforces isolation at the connection/routing level.
+- **Latency**: Faster exact-search latency. Queries execute against a smaller, targeted index rather than scanning and post-filtering a massive global index.
+- **Memory**: The trade-off is higher memory overhead. Given our high volume assumption (1B orders/tenant), this overhead is an acceptable security premium.
 
-### Part 4d — Architectural Extension (write-up, ≤ 1 page, required)
+**2. LLM backend per tenant & Routing**
+**Decision**: Decentralized routing via a Service Mesh (Istio) sidecar proxy.
+- **Where routing lives**: The FastAPI application blindly makes standard OpenAI SDK calls to `localhost`. An Envoy sidecar intercepts this egress traffic. Istio `VirtualService` rules dynamically route the traffic based on the `tenant_id` header—sending EU tenants to Azure OpenAI and KSA tenants to an internal Kubernetes service hosting a private model (e.g., vLLM).
+- **Model-agnostic prompt layer**: The application code remains 100% agnostic. Because all backends (Azure, OpenAI, vLLM, Ollama) expose an OpenAI-compatible REST API, the application's prompt templates and parsing logic require zero modification regardless of where the sidecar routes the request.
 
-You now have a service with three AI components: an LLM call, an embedding model, and a vector index. Scale it to **50 enterprise customers**, each with their own data residency requirement (EU in eu-west, US in us-east, KSA on local cloud).
+**3. PII in the NL→SQL pipeline**
+**Decision**: Reversible tokenization via WebAssembly (Wasm) Envoy Filters.
+- **Guardrails**: A lightweight Wasm plugin runs inside the Envoy sidecar. It intercepts outbound JSON payloads, detects PII (Customer IDs), and replaces them with secure UUID tokens (e.g., `<TOK_123>`) before forwarding to the LLM. It then intercepts the LLM's SQL response and detokenizes it before returning it to the application.
+- **Cloud vs. On-Premise impact**: The answer absolutely changes based on the backend. For third-party Cloud APIs, this tokenization is **mandatory** to prevent PII egress over the internet. For an on-premise local Llama model running inside the same secure Kubernetes boundary, the tokenization filter can be bypassed via Istio routing rules, allowing the local LLM to see the raw IDs and potentially generate higher-quality context without violating data residency.
 
-Address the following — diagrams welcome:
-
-1. **Tenant isolation for the vector index** — one shared FAISS index with namespace filtering, or one index per tenant? What are the memory, latency, and data-leakage trade-offs?
-2. **LLM backend per tenant** — some enterprise customers will require an on-premise model (e.g. a private Llama deployment) rather than a cloud API. Where in the stack does that routing live, and how do you keep the prompt template layer model-agnostic?
-3. **PII in the NL→SQL pipeline** — order data contains customer IDs and amounts. What guardrails do you add before the question and schema reach the LLM, and does your answer change if the LLM is a third-party cloud API vs. on-premise?
-4. **One specific decision** — pick the highest-leverage architectural choice you made above and state the trade-off you accepted.
-
-We are NOT asking you to implement the multi-tenant design. We are looking for architect-grade reasoning in writing.
-
----
-
-## Bonus (Optional — DS Expert path only)
-
-### Metrics
-
-- Expose `/metrics` in Prometheus format with counters (requests, errors, processing time).
-
-### Caching
-
-- Cache results of `/orders/stats` in memory (e.g., TTL = 60 seconds).
-
-### CLI
-
-- Add subcommands to `etl.py`:
-  - `python etl.py show-stats` → print revenue/avg order.
-
----
-
-## Assumptions
-
-- CSVs are well-formed (one row per line).
-- Order IDs are unique.
-- Any Python libraries may be used (e.g., `pandas`, `sqlite3`, `fastapi`, `uvicorn`, `sentence-transformers`, `faiss-cpu`, `langchain`, `langgraph`, etc.).
-
----
-
-## Deliverables
-
-Code in a GitHub repo or zip file with:
-
-- `etl.py`
-- `app.py` (FastAPI service)
-- `Dockerfile`
-- `k8s/` folder with manifests
-- `README.md` with setup instructions, design notes, and Part 4 write-up
+**4. Highest-leverage decision & trade-off**
+**Decision**: Decoupling the Relational Store (PostgreSQL) from the Vector Store (Milvus), rather than using unified storage like `pgvector`.
+- **Leverage**: At our assumed scale of 1 Billion orders per tenant, this separation is the highest-leverage choice. It allows the read-heavy semantic search tier to scale horizontally (and utilize memory-mapped NVMe disks for 2TB vector graphs) entirely independently from the transactional database handling heavy ETL writes and SQL aggregations. 
+- **Trade-off accepted**: We accepted significantly higher operational complexity. We must now maintain, monitor, and upgrade two massive distributed database clusters (PostgreSQL + Milvus) and engineer complex ETL pipelines to keep their states eventually consistent, abandoning the simplicity of single-transaction unified ACID commits that `pgvector` would have provided.
