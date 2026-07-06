@@ -14,6 +14,7 @@ _model: SentenceTransformer | None = None
 
 
 def _get_model() -> SentenceTransformer:
+    """Lazy-load and cache the sentence-transformer model."""
     global _model
     if _model is None:
         logger.info("Loading embedding model: %s", MODEL_NAME)
@@ -22,6 +23,7 @@ def _get_model() -> SentenceTransformer:
 
 
 def _order_to_text(row: dict) -> str:
+    """Format an order row as a text string for embedding."""
     return f"customer {row['customer_id']}, ${row['amount']:.2f} USD, {row['order_date']}"
 
 

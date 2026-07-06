@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 
 
 def ask(question: str) -> dict:
+    """Answer a natural-language question using LLM-generated SQL."""
     total_tokens = 0
 
     # --- First attempt ---

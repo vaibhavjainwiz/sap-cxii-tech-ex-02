@@ -4,8 +4,7 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Query
 
 from orders import api, embeddings, nlq
-from orders.models import Order, OrderStats, SemanticSearchResult
-from orders.models_nlq import AskRequest, AskResponse
+from orders.models import Order, OrderStats, SemanticSearchResult, AskRequest, AskResponse
 
 logging.basicConfig(level=logging.INFO)
 
@@ -14,16 +13,19 @@ app = FastAPI(title="Order API")
 
 @app.on_event("startup")
 def startup_load_index():
+    """Pre-load the semantic search index on application startup."""
     embeddings.load_index()
 
 
 @app.get("/healthz")
 def healthz():
+    """Return a simple health-check response."""
     return "ok"
 
 
 @app.get("/orders/customer/{customer_id}")
 def order_by_customer(customer_id: str) -> list[Order]:
+    """Retrieve all orders for a given customer."""
     orders = api.get_orders_by_customer(customer_id)
     if not orders:
         raise HTTPException(status_code=404, detail=f"No orders found for {customer_id}")
@@ -32,16 +34,19 @@ def order_by_customer(customer_id: str) -> list[Order]:
 
 @app.get("/orders/stats")
 def order_stats() -> OrderStats:
+    """Return aggregate order statistics."""
     return api.get_order_stats()
 
 
 @app.get("/orders/recent")
 def recent_orders(days: Annotated[int, Query(ge=1)]) -> list[Order]:
+    """Return orders placed within the last N days."""
     return api.get_recent_orders(days)
 
 
 @app.post("/orders/ask")
 def ask_orders(req: AskRequest) -> AskResponse:
+    """Answer a natural-language question about order data."""
     result = nlq.ask(req.question)
     if "error" in result:
         if result["error"] == "unanswerable":
@@ -55,4 +60,5 @@ def semantic_search(
     q: Annotated[str, Query(min_length=1)],
     top_k: Annotated[int, Query(ge=1, le=100)] = 5,
 ) -> list[SemanticSearchResult]:
+    """Find orders similar to a free-text query."""
     return [SemanticSearchResult(**r) for r in embeddings.search(q, top_k)]

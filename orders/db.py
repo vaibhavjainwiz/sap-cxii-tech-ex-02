@@ -5,18 +5,21 @@ from orders.models import Order, OrderStats
 
 
 def _connect():
+    """Open a SQLite connection with Row factory."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def save_orders(df: pd.DataFrame):
+    """Write a DataFrame of orders to the database."""
     conn = _connect()
     df.to_sql(TABLE_NAME, conn, if_exists="replace", index=False)
     conn.close()
 
 
 def find_orders_by_customer(customer_id: str) -> list[Order]:
+    """Return all orders for a given customer ID."""
     conn = _connect()
     rows = conn.execute(
         f"SELECT * FROM {TABLE_NAME} WHERE customer_id = ?", (customer_id,)
@@ -26,6 +29,7 @@ def find_orders_by_customer(customer_id: str) -> list[Order]:
 
 
 def get_order_stats() -> OrderStats:
+    """Compute aggregate order statistics."""
     conn = _connect()
     cur = conn.cursor()
 
@@ -46,6 +50,7 @@ def get_order_stats() -> OrderStats:
 
 
 def find_recent_orders(cutoff_date: str) -> list[Order]:
+    """Return orders on or after the cutoff date."""
     conn = _connect()
     rows = conn.execute(
         f"SELECT * FROM {TABLE_NAME} WHERE order_date >= ? ORDER BY order_date DESC",
@@ -56,6 +61,7 @@ def find_recent_orders(cutoff_date: str) -> list[Order]:
 
 
 def find_orders_by_ids(order_ids: list[str]) -> dict[str, Order]:
+    """Return a mapping of order_id to Order for the given IDs."""
     conn = _connect()
     placeholders = ",".join("?" for _ in order_ids)
     rows = conn.execute(
@@ -67,6 +73,7 @@ def find_orders_by_ids(order_ids: list[str]) -> dict[str, Order]:
 
 
 def execute_raw_sql(sql: str) -> list[dict]:
+    """Execute raw SQL and return results as dicts."""
     conn = _connect()
     rows = conn.execute(sql).fetchall()
     conn.close()

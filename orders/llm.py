@@ -11,6 +11,7 @@ _client: OpenAI | None = None
 
 
 def _get_client() -> OpenAI:
+    """Lazy-load and cache the OpenAI client."""
     global _client
     if _client is None:
         _client = OpenAI()  # reads OPENAI_API_KEY from env
@@ -18,6 +19,7 @@ def _get_client() -> OpenAI:
 
 
 def _call_llm(messages: list[dict]) -> tuple[str, int]:
+    """Send messages to the LLM and return (content, token_count)."""
     client = _get_client()
     response = client.chat.completions.create(
         model="gpt-4o-mini",
