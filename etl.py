@@ -2,7 +2,7 @@ import argparse
 import sys
 from orders.extract import extract
 from orders.transform import transform
-from orders import api
+from orders import api, embeddings
 
 def main():
     """ Main function"""
@@ -20,6 +20,8 @@ def main():
         df = transform(df)
         api.save_orders(df)
         print(f"Loaded {len(df)} rows into SQLite.")
+        embeddings.build_index(df)
+        print("Semantic search index rebuilt.")
     else:
         parser.print_help()
         sys.exit(1)

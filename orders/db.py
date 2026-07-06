@@ -55,6 +55,17 @@ def find_recent_orders(cutoff_date: str) -> list[Order]:
     return [Order(**dict(r)) for r in rows]
 
 
+def find_orders_by_ids(order_ids: list[str]) -> dict[str, Order]:
+    conn = _connect()
+    placeholders = ",".join("?" for _ in order_ids)
+    rows = conn.execute(
+        f"SELECT * FROM {TABLE_NAME} WHERE order_id IN ({placeholders})",
+        order_ids,
+    ).fetchall()
+    conn.close()
+    return {r["order_id"]: Order(**dict(r)) for r in rows}
+
+
 def execute_raw_sql(sql: str) -> list[dict]:
     conn = _connect()
     rows = conn.execute(sql).fetchall()

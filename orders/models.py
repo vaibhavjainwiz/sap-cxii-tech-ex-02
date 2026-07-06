@@ -13,3 +13,11 @@ class OrderStats(BaseModel):
     total_revenue: float
     avg_order_value: float
     orders_per_day: dict[str, int]
+
+
+class SemanticSearchResult(BaseModel):
+    order_id: str
+    customer_id: str
+    amount_usd: float
+    order_date: str
+    score: float

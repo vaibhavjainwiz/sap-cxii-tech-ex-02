@@ -2,3 +2,5 @@ pandas
 fastapi
 uvicorn
 openai
+sentence-transformers
+faiss-cpu
